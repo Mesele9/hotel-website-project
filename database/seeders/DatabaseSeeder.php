@@ -13,11 +13,18 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
+        // Create a default admin user
         User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
+            'name' => 'Admin User',
+            'email' => 'admin@hotel.com',
+            'password' => bcrypt('password'), // password
+        ]);
+        
+        $this->call([
+            AmenitySeeder::class,
+            RoomTypeSeeder::class,
+            RoomSeeder::class,
+            SettingSeeder::class,
         ]);
     }
 }
