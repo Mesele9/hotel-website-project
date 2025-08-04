@@ -3,11 +3,24 @@
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\BookingController;
 
+use App\Http\Controllers\HomeController;
+use App\Http\Controllers\PageController;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+// **REPLACE THE DEFAULT WELCOME ROUTE WITH THIS**
+Route::get('/', [HomeController::class, 'index'])->name('home');
+
+// **ADD THE NEW PUBLIC ROUTES**
+Route::get('/meetings-events', [PageController::class, 'meetings'])->name('page.meetings');
+Route::get('/local-guide', [PageController::class, 'localGuide'])->name('page.local_guide');
+Route::get('/contact', [PageController::class, 'contact'])->name('page.contact');
+
+Route::get('/booking/search', [BookingController::class, 'search'])->name('booking.search');
+Route::get('/booking/create', [BookingController::class, 'create'])->name('booking.create');
+Route::post('/booking/store', [BookingController::class, 'store'])->name('booking.store');
+Route::get('/booking/success/{booking}', [BookingController::class, 'success'])->name('booking.success');
+
 
 Route::get('/dashboard', function () {
     return view('dashboard');
@@ -42,6 +55,8 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     // Availability Calendar
     Route::get('availability', [\App\Http\Controllers\Admin\AvailabilityController::class, 'index'])->name('availability.index');
     Route::post('availability', [\App\Http\Controllers\Admin\AvailabilityController::class, 'store'])->name('availability.store');
+
+    Route::resource('bookings', \App\Http\Controllers\Admin\BookingController::class); // Only create index/show for now
 
     // Add other admin routes here in the future
 

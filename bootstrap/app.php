@@ -17,6 +17,11 @@ return Application::configure(basePath: dirname(__DIR__))
 
         //
     })
+
+    ->withProviders([
+        App\Providers\SettingServiceProvider::class, 
+    ])
+
     ->withExceptions(function (Exceptions $exceptions): void {
         //
     })->create();

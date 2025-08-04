@@ -28,8 +28,8 @@
                 <a href="#">YegeZulejoch Admin</a>
             </div>
             <nav class="mt-4">
-                <a href="#" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">Dashboard</a>
-                <a href="#" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">Bookings</a>
+                <a href="{{ route('admin.dashboard') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">Dashboard</a>
+                <a href="{{ route('admin.bookings.index') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">Bookings</a>
                 
                 <div class="mt-4">
                     <p class="px-4 pt-2 pb-1 text-xs text-gray-500 uppercase">Manage Hotel</p>
