@@ -10,11 +10,6 @@
             <h2 class="text-2xl font-bold mb-6">Guest Information</h2>
             <form action="{{ route('booking.store') }}" method="POST">
                 @csrf
-                <input type="hidden" name="room_id" value="{{ $room->id }}">
-                <input type="hidden" name="check_in_date" value="{{ request('check_in_date') }}">
-                <input type="hidden" name="check_out_date" value="{{ request('check_out_date') }}">
-                <input type="hidden" name="total_guests" value="{{ request('guests') }}">
-                <input type="hidden" name="total_price" value="{{ $totalPrice }}">
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="mb-4">
@@ -35,26 +30,34 @@
                     <textarea name="notes" id="notes" rows="4" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700"></textarea>
                 </div>
 
-                <h3 class="text-xl font-bold mb-4">Payment Details</h3>
-                <p class="text-gray-600 mb-4">This is a demo. No real payment will be processed. Click confirm to simulate a successful booking.</p>
-                
-                <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg text-lg">Confirm Booking</button>
+                <h3 class="text-xl font-bold mb-4 mt-6">Payment Details</h3>
+                <p class="text-gray-600 mb-4">This is a demo. No real payment will be processed.</p>
+                <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg text-lg">Confirm Booking & Pay</button>
             </form>
         </div>
+
         <!-- Booking Summary -->
         <div class="bg-gray-50 p-8 rounded-lg shadow-inner">
             <h2 class="text-2xl font-bold mb-6">Booking Summary</h2>
-            <img src="{{ $room->roomType->images->first() ? asset('storage/' . $room->roomType->images->first()->path) : 'https://via.placeholder.com/400x300.png?text=No+Image' }}" alt="{{ $room->roomType->name }}" class="w-full h-48 object-cover rounded-lg mb-4">
-            <h3 class="text-xl font-semibold">{{ $room->roomType->name }}</h3>
-            <p class="text-gray-600">Room {{ $room->room_number }}</p>
-            <hr class="my-4">
-            <div class="space-y-2">
-                <p><strong>Check-in:</strong> {{ \Carbon\Carbon::parse(request('check_in_date'))->format('D, M d, Y') }}</p>
-                <p><strong>Check-out:</strong> {{ \Carbon\Carbon::parse(request('check_out_date'))->format('D, M d, Y') }}</p>
-                <p><strong>Guests:</strong> {{ request('guests') }}</p>
-                <p><strong>Nights:</strong> {{ $numberOfNights }}</p>
+            <div class="space-y-6">
+                @foreach($cart as $item)
+                <div class="flex items-start space-x-4">
+                    <img src="{{ $item['room']->roomType->images->first() ? asset('storage/' . $item['room']->roomType->images->first()->path) : 'https://via.placeholder.com/100' }}" alt="{{ $item['room']->roomType->name }}" class="w-24 h-20 object-cover rounded-lg">
+                    <div class="flex-1">
+                        <h4 class="font-semibold">{{ $item['room']->roomType->name }}</h4>
+                        <p class="text-sm text-gray-600">
+                            {{ \Carbon\Carbon::parse($item['check_in_date'])->format('M d, Y') }} - {{ \Carbon\Carbon::parse($item['check_out_date'])->format('M d, Y') }}
+                        </p>
+                        <p class="text-sm text-gray-600">{{ $item['nights'] }} nights, {{ $item['guests'] }} guests</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="font-semibold">${{ number_format($item['price'], 2) }}</p>
+                        <a href="{{ route('booking.cart.remove', $item['rowId']) }}" class="text-red-500 text-xs hover:underline">Remove</a>
+                    </div>
+                </div>
+                @endforeach
             </div>
-            <hr class="my-4">
+            <hr class="my-6">
             <div class="text-2xl font-bold text-right">
                 <span class="text-gray-600">Total:</span>
                 <span class="text-primary">${{ number_format($totalPrice, 2) }}</span>

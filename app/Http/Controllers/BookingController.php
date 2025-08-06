@@ -11,6 +11,8 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use App\Rules\EnsureRoomIsAvailable;
+
 
 class BookingController extends Controller
 {
@@ -28,116 +30,231 @@ class BookingController extends Controller
         $checkIn = Carbon::parse($validated['check_in_date']);
         $checkOut = Carbon::parse($validated['check_out_date']);
 
-        // Find room types that have the capacity
-        $availableRoomTypes = RoomType::where('capacity', '>=', $validated['guests'])
-            ->whereDoesntHave('rooms.bookings', function ($query) use ($checkIn, $checkOut) {
-                $query->where(function ($q) use ($checkIn, $checkOut) {
-                    $q->where('check_in_date', '<', $checkOut)
-                      ->where('check_out_date', '>', $checkIn);
-                });
-            })
-            ->whereDoesntHave('rooms.dateBlocks', function ($query) use ($checkIn, $checkOut) {
-                $query->where(function ($q) use ($checkIn, $checkOut) {
-                    $q->where('start_date', '<', $checkOut)
-                      ->where('end_date', '>', $checkIn);
-                });
-            })
-             ->whereHas('rooms', function($query) {
-                $query->where('status', 'Available');
+        // **THE CORRECTED LOGIC**
+        $availableRoomTypes = RoomType::query()
+            // First, ensure the room type can accommodate the number of guests
+            ->where('capacity', '>=', $validated['guests'])
+            // Now, check if this room type HAS at least one room that satisfies ALL availability conditions
+            ->whereHas('rooms', function ($roomQuery) use ($checkIn, $checkOut) {
+                $roomQuery
+                    // Condition 1: The room's master status must be 'Available'
+                    ->where('status', 'Available')
+                    // Condition 2: The room must NOT have any overlapping bookings
+                    ->whereDoesntHave('bookings', function ($bookingQuery) use ($checkIn, $checkOut) {
+                        $bookingQuery->where(function ($q) use ($checkIn, $checkOut) {
+                            $q->where('check_in_date', '<', $checkOut)
+                            ->where('check_out_date', '>', $checkIn);
+                        });
+                    })
+                    // Condition 3: The room must NOT have any overlapping admin blocks
+                    ->whereDoesntHave('dateBlocks', function ($blockQuery) use ($checkIn, $checkOut) {
+                        $blockQuery->where(function ($q) use ($checkIn, $checkOut) {
+                            $q->where('start_date', '<', $checkOut)
+                            ->where('end_date', '>=', $checkIn);
+                        });
+                    });
             })
             ->with('images')
             ->get();
-
+            
         return view('public.booking.results', compact('availableRoomTypes'));
     }
 
     /**
-     * Step 2: Show the booking form with details for a selected room.
+     * Add a selected room to the booking cart in the session.
      */
-    public function create(Request $request)
+public function addToCart(Request $request)
+{
+    $validated = $request->validate([
+        'room_type_id' => 'required|exists:room_types,id',
+        'check_in_date' => 'required|date',
+        'check_out_date' => 'required|date',
+        'guests' => 'required|integer'
+    ]);
+
+    $checkIn = Carbon::parse($validated['check_in_date']);
+    $checkOut = Carbon::parse($validated['check_out_date']);
+    
+    // **NEW LOGIC: Find an available room NOT already in the cart**
+    $cart = session()->get('booking_cart', []);
+    $bookedRoomIds = array_column($cart, 'room_id');
+
+    // Find an available room of the selected type that is not already in the cart
+    $room = Room::where('room_type_id', $validated['room_type_id'])
+        ->where('status', 'Available')
+        ->whereNotIn('id', $bookedRoomIds) // <-- Exclude rooms already in cart
+        ->whereDoesntHave('bookings', function ($q) use ($checkIn, $checkOut) {
+            $q->where('check_in_date', '<', $checkOut)->where('check_out_date', '>', $checkIn);
+        })
+        ->whereDoesntHave('dateBlocks', function ($q) use ($checkIn, $checkOut) {
+            $q->where('start_date', '<', $checkOut)->where('end_date', '>=', $checkIn);
+        })
+        ->first();
+
+    // Handle different scenarios
+    if (!$room) {
+        return back()->with('cart_error', 'Sorry, all available rooms of that type have been added to your booking or are no longer available.');
+    }
+    
+    $rowId = uniqid(); // Generate a unique ID for this cart item
+
+    $cart[$rowId] = [
+        'rowId' => $rowId,
+        'room_id' => $room->id,
+        'room_type_id' => $room->room_type_id,
+        'room' => $room->load('roomType.images'),
+        'check_in_date' => $validated['check_in_date'],
+        'check_out_date' => $validated['check_out_date'],
+        'guests' => $validated['guests'],
+    ];
+
+    session()->put('booking_cart', $cart);
+
+    // Use the redirect's session flash, which is more reliable
+    return redirect()->route('booking.search', $request->query())
+        ->with('cart_success', $room->roomType->name . ' has been added to your booking.');
+}
+
+
+    /**
+     * Remove an item from the booking cart.
+     */
+    public function removeFromCart($rowId)
     {
-        $validated = $request->validate([
-            'room_type_id' => 'required|exists:room_types,id',
-            'check_in_date' => 'required|date',
-            'check_out_date' => 'required|date',
-            'guests' => 'required|integer'
-        ]);
-
-        $checkIn = Carbon::parse($validated['check_in_date']);
-        $checkOut = Carbon::parse($validated['check_out_date']);
-
-        // Find one specific available room of the chosen type
-        $room = Room::where('room_type_id', $validated['room_type_id'])
-            ->where('status', 'Available')
-            ->whereDoesntHave('bookings', function ($query) use ($checkIn, $checkOut) {
-                $query->where(function ($q) use ($checkIn, $checkOut) {
-                    $q->where('check_in_date', '<', $checkOut)->where('check_out_date', '>', $checkIn);
-                });
-            })
-            ->whereDoesntHave('dateBlocks', function ($query) use ($checkIn, $checkOut) {
-                 $query->where(function ($q) use ($checkIn, $checkOut) {
-                    $q->where('start_date', '<', $checkOut)->where('end_date', '>', $checkIn);
-                });
-            })
-            ->with('roomType.images')
-            ->firstOrFail(); // Fails if no room is available, preventing double booking
-
-        $numberOfNights = $checkIn->diffInDays($checkOut);
-        $totalPrice = $numberOfNights * $room->roomType->base_price;
-
-        return view('public.booking.create', compact('room', 'numberOfNights', 'totalPrice'));
+        $cart = session()->get('booking_cart', []);
+        if (isset($cart[$rowId])) {
+            unset($cart[$rowId]);
+            session()->put('booking_cart', $cart);
+        }
+        return redirect()->route('booking.cart.view')->with('cart_success', 'Room removed from your booking.');
     }
 
     /**
-     * Step 3: Store the booking in the database.
+     * Clear the entire booking cart.
+     */
+    public function clearCart()
+    {
+        session()->forget('booking_cart');
+        return redirect()->route('home')->with('cart_success', 'Your booking has been cleared.');
+    }
+
+    /**
+     * Show the booking cart / checkout page.
+     */
+    public function viewCart(Request $request)
+    {
+        $cart = session()->get('booking_cart', []);
+        $totalPrice = 0;
+        
+        if (empty($cart)) {
+            // If the cart is empty but we have search query, redirect to search.
+            if ($request->has('check_in_date')) {
+                 return redirect()->route('booking.search', $request->query());
+            }
+            return redirect()->route('home');
+        }
+
+        foreach ($cart as &$item) { // Pass by reference to add data
+            $checkIn = Carbon::parse($item['check_in_date']);
+            $checkOut = Carbon::parse($item['check_out_date']);
+            $item['nights'] = $checkIn->diffInDays($checkOut);
+            $item['price'] = $item['nights'] * $item['room']->roomType->base_price;
+            $totalPrice += $item['price'];
+        }
+
+        return view('public.booking.checkout', [
+            'cart' => $cart,
+            'totalPrice' => $totalPrice
+        ]);
+    }
+    
+    /**
+     * Store the booking(s) in the database.
      */
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'room_id' => 'required|exists:rooms,id',
-            'check_in_date' => 'required|date',
-            'check_out_date' => 'required|date',
-            'total_guests' => 'required|integer',
-            'total_price' => 'required|numeric',
             'guest_name' => 'required|string|max:255',
             'guest_email' => 'required|email|max:255',
             'guest_phone' => 'nullable|string|max:255',
             'notes' => 'nullable|string',
         ]);
         
-        // Final check for availability to prevent race conditions
-        $isAvailable = !Booking::where('room_id', $validated['room_id'])
-            ->where(function ($q) use ($validated) {
-                $q->where('check_in_date', '<', $validated['check_out_date'])
-                  ->where('check_out_date', '>', $validated['check_in_date']);
-            })->exists();
-
-        if (!$isAvailable) {
-            return back()->withErrors(['availability' => 'Sorry, this room was just booked. Please try again.'])->withInput();
+        $cart = session()->get('booking_cart', []);
+        if (empty($cart)) {
+            return redirect()->route('home')->withErrors(['cart_error' => 'Your booking cart is empty.']);
         }
+        
+        // This transaction ensures that either ALL bookings are created, or NONE are.
+        $bookings = DB::transaction(function () use ($cart, $validated) {
+            $createdBookings = [];
+            foreach ($cart as $item) {
+                // Final availability check for each room inside the transaction
+                $isAvailable = !Booking::where('room_id', $item['room_id'])
+                    ->where(function ($q) use ($item) {
+                        $q->where('check_in_date', '<', $item['check_out_date'])
+                          ->where('check_out_date', '>', $item['check_in_date']);
+                    })->exists();
 
-        $booking = DB::transaction(function () use ($validated) {
-            $booking = new Booking($validated);
-            $booking->booking_reference = 'YEG-' . strtoupper(Str::random(8));
-            $booking->payment_status = 'Paid'; // Simulate successful payment
-            $booking->save();
+                if (!$isAvailable) {
+                    // This will automatically roll back the transaction
+                    throw new \Exception('Sorry, room ' . $item['room']->room_number . ' was just booked by someone else.');
+                }
 
-            // Send confirmation email to the guest
-            Mail::to($booking->guest_email)->send(new BookingConfirmationMail($booking));
+                $checkIn = Carbon::parse($item['check_in_date']);
+                $checkOut = Carbon::parse($item['check_out_date']);
+                $numberOfNights = $checkIn->diffInDays($checkOut);
+                $totalPrice = $numberOfNights * $item['room']->roomType->base_price;
+
+                $booking = new Booking();
+                $booking->fill($validated);
+                $booking->room_id = $item['room_id'];
+                $booking->check_in_date = $item['check_in_date'];
+                $booking->check_out_date = $item['check_out_date'];
+                $booking->total_guests = $item['guests'];
+                $booking->total_price = $totalPrice;
+                $booking->booking_reference = 'YEG-' . strtoupper(Str::random(8));
+                $booking->payment_status = 'Paid'; // Simulate payment
+                $booking->save();
+                
+                $createdBookings[] = $booking;
+            }
             
-            // ToDo: Send notification email to admin in the future
+            // Send ONE confirmation email with details of ALL bookings
+            // We'll just use the first booking as the primary for the email for simplicity
+            Mail::to($validated['guest_email'])->send(new BookingConfirmationMail($createdBookings[0]));
 
-            return $booking;
+            return $createdBookings;
         });
+        
+        // Clear the cart after successful booking
+        session()->forget('booking_cart');
 
-        return redirect()->route('booking.success', ['booking' => $booking->id]);
+        $bookingIds = collect($bookings)->pluck('id')->toArray();
+
+        // Redirect to success page with all booking IDs
+        return redirect()->route('booking.success', ['booking_ids' => $bookingIds]);
     }
 
     /**
      * Step 4: Show the booking success page.
      */
-    public function success(Booking $booking)
+    public function success(Request $request)
     {
-        return view('public.booking.success', compact('booking'));
+        // Validate that we have an array of booking IDs
+        $validated = $request->validate([
+            'booking_ids' => 'required|array',
+            'booking_ids.*' => 'exists:bookings,id'
+        ]);
+
+        $bookings = Booking::with('room.roomType')->whereIn('id', $validated['booking_ids'])->get();
+        
+        // Check if any bookings were actually found (as a safeguard)
+        if ($bookings->isEmpty()) {
+            return redirect()->route('home')->withErrors('Could not find the specified booking confirmation.');
+        }
+
+        return view('public.booking.success', compact('bookings'));
     }
+
 }

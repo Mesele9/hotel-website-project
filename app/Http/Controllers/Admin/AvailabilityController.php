@@ -8,6 +8,8 @@ use App\Models\DateBlock;
 use App\Models\RoomType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use App\Models\Room;
+use Illuminate\Validation\ValidationException;
 
 class AvailabilityController extends Controller
 {
@@ -52,7 +54,22 @@ class AvailabilityController extends Controller
 
         $bookings = Booking::with('room')->get();
         foreach ($bookings as $booking) {
-            $events[] = [ 'title' => 'Booked: ' . $booking->guest_name, 'start' => $booking->check_in_date, 'end' => Carbon::parse($booking->check_out_date)->addDay()->toDateString(), 'resourceId' => $booking->room_id, 'display' => 'background', 'color' => '#f87171' ];
+            $events[] = [
+                'id'        => 'booking_' . $booking->id, // Add a unique ID for the event
+                'title'     => 'Booked: ' . $booking->guest_name,
+                'start'     => $booking->check_in_date,
+                'end'       => Carbon::parse($booking->check_out_date)->addDay()->toDateString(),
+                'resourceId'=> $booking->room_id,
+                'display'   => 'background',
+                'color'     => '#f87171', // Red-400 for bookings
+                'classNames'=> ['booking-event'], // Add a CSS class to target these events
+                'extendedProps' => [ // Add custom data here
+                    'booking_id' => $booking->id,
+                    'guest_name' => $booking->guest_name,
+                    'reference' => $booking->booking_reference,
+                ]
+            ];
+
         }
 
         $dateBlocks = DateBlock::all();
@@ -65,39 +82,121 @@ class AvailabilityController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'action' => 'required|string|in:block,unblock',
-            'room_ids' => 'required|array',          // <-- Expect an array now
-            'room_ids.*' => 'required|exists:rooms,id', // <-- Validate each ID
+            'room_ids' => 'required|array',
+            'room_ids.*' => 'required|exists:rooms,id',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
         ]);
 
-        $startDate = Carbon::parse($request->start_date);
-        $endDate = Carbon::parse($request->end_date)->subDay();
-        $roomIds = $request->room_ids;
+        $requestedStart = Carbon::parse($validated['start_date']);
+        $requestedEnd = Carbon::parse($validated['end_date'])->subDay();
+        $roomIds = $validated['room_ids'];
 
-        if ($request->action === 'block') {
-            $dataToInsert = [];
+        if ($validated['action'] === 'block') {
             foreach ($roomIds as $roomId) {
-                $dataToInsert[] = [
-                    'room_id' => $roomId,
-                    'start_date' => $startDate->toDateString(),
-                    'end_date' => $endDate->toDateString(),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-            DateBlock::insert($dataToInsert); // Use bulk insert for efficiency
+                $room = Room::find($roomId);
 
-        } elseif ($request->action === 'unblock') {
-            DateBlock::whereIn('room_id', $roomIds) // <-- Use whereIn for bulk action
-                ->where(function ($query) use ($startDate, $endDate) {
-                    $query->whereBetween('start_date', [$startDate, $endDate])
-                        ->orWhereBetween('end_date', [$startDate, $endDate])
-                        ->orWhere(function($q) use ($startDate, $endDate) {
-                                $q->where('start_date', '<', $startDate)
-                                ->where('end_date', '>', $endDate);
+                if ($room->status !== 'Available') {
+                    continue; // Skip rooms that are "Under Maintenance", etc.
+                }
+
+                // --- THE NEW "SMART SPLIT" LOGIC ---
+
+                // 1. Define the total requested range.
+                $gapsToBlock = [['start' => $requestedStart->copy(), 'end' => $requestedEnd->copy()]];
+
+                // 2. Find all guest bookings that conflict with this range.
+                $conflictingBookings = Booking::where('room_id', $roomId)
+                    ->where('check_in_date', '<', $requestedEnd->copy()->addDay())
+                    ->where('check_out_date', '>', $requestedStart)
+                    ->orderBy('check_in_date')
+                    ->get();
+                
+                // 3. "Cut out" the booking periods from our requested range.
+                foreach ($conflictingBookings as $booking) {
+                    $bookingStart = Carbon::parse($booking->check_in_date);
+                    $bookingEnd = Carbon::parse($booking->check_out_date)->subDay(); // Bookings are inclusive
+                    $nextGaps = [];
+                    foreach ($gapsToBlock as $gap) {
+                        // If the booking is entirely within this gap, it splits the gap into two.
+                        if ($bookingStart->gt($gap['start']) && $bookingEnd->lt($gap['end'])) {
+                            $nextGaps[] = ['start' => $gap['start'], 'end' => $bookingStart->copy()->subDay()];
+                            $nextGaps[] = ['start' => $bookingEnd->copy()->addDay(), 'end' => $gap['end']];
+                        }
+                        // If the booking overlaps the start of the gap
+                        elseif ($bookingEnd->gte($gap['start']) && $bookingEnd->lt($gap['end'])) {
+                            $gap['start'] = $bookingEnd->copy()->addDay();
+                            $nextGaps[] = $gap;
+                        }
+                        // If the booking overlaps the end of the gap
+                        elseif ($bookingStart->gt($gap['start']) && $bookingStart->lte($gap['end'])) {
+                            $gap['end'] = $bookingStart->copy()->subDay();
+                            $nextGaps[] = $gap;
+                        }
+                        // If the booking completely covers the gap, the gap is removed.
+                        elseif ($bookingStart->lte($gap['start']) && $bookingEnd->gte($gap['end'])) {
+                            // Do nothing, this gap is fully booked.
+                        }
+                        else {
+                            // The booking does not overlap with this gap.
+                            $nextGaps[] = $gap;
+                        }
+                    }
+                    $gapsToBlock = $nextGaps;
+                }
+
+                // 4. MERGE the newly calculated safe gaps with existing admin blocks.
+                $existingBlocks = DateBlock::where('room_id', $roomId)
+                    ->where('start_date', '<=', $requestedEnd)
+                    ->where('end_date', '>=', $requestedStart)
+                    ->get();
+
+                $timeline = $gapsToBlock; // Start with the safe gaps
+                foreach ($existingBlocks as $block) {
+                    $timeline[] = ['start' => Carbon::parse($block->start_date), 'end' => Carbon::parse($block->end_date)];
+                }
+                
+                // Delete old blocks to replace them with the new merged ones.
+                $existingBlocks->each->delete();
+
+                // Consolidate all ranges
+                if (!empty($timeline)) {
+                    // Remove any invalid ranges (where end is before start)
+                    $timeline = array_filter($timeline, fn($range) => $range['end']->gte($range['start']));
+                    if (empty($timeline)) continue;
+
+                    usort($timeline, fn($a, $b) => $a['start'] <=> $b['start']);
+                    $mergedTimeline = [$timeline[0]];
+                    for ($i = 1; $i < count($timeline); $i++) {
+                        $lastRange = &$mergedTimeline[count($mergedTimeline) - 1];
+                        $currentRange = $timeline[$i];
+                        if ($currentRange['start'] <= $lastRange['end']->copy()->addDay()) {
+                            $lastRange['end'] = max($lastRange['end'], $currentRange['end']);
+                        } else {
+                            $mergedTimeline[] = $currentRange;
+                        }
+                    }
+
+                    // 5. SAVE the new, clean, consolidated blocks.
+                    foreach ($mergedTimeline as $blockRange) {
+                        DateBlock::create([
+                            'room_id' => $roomId,
+                            'start_date' => $blockRange['start']->toDateString(),
+                            'end_date' => $blockRange['end']->toDateString(),
+                        ]);
+                    }
+                }
+            }
+        } elseif ($validated['action'] === 'unblock') {
+            DateBlock::whereIn('room_id', $roomIds)
+                ->where(function ($query) use ($requestedStart, $requestedEnd) {
+                    $query->whereBetween('start_date', [$requestedStart, $requestedEnd])
+                        ->orWhereBetween('end_date', [$requestedStart, $requestedEnd])
+                        ->orWhere(function($q) use ($requestedStart, $requestedEnd) {
+                                $q->where('start_date', '<', $requestedStart)
+                                ->where('end_date', '>', $requestedEnd);
                         });
                 })
                 ->delete();
@@ -105,4 +204,5 @@ class AvailabilityController extends Controller
 
         return response()->json(['status' => 'success']);
     }
+
 }

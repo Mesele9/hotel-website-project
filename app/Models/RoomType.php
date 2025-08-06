@@ -7,11 +7,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany; // <-- Add this
-
+use App\Models\Traits\Sluggable; 
 
 class RoomType extends Model
 {
-    use HasFactory;
+    use HasFactory, Sluggable; 
+
 
     protected $fillable = [
         'name',
@@ -42,6 +43,11 @@ class RoomType extends Model
     public function images(): MorphMany // <-- Add this new method
     {
         return $this->morphMany(Image::class, 'imageable');
+    }
+
+    public function getRouteKeyName()
+    {
+        return 'slug';
     }
 
 }

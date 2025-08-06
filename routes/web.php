@@ -4,7 +4,7 @@ use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\BookingController;
-
+use App\Http\Controllers\PublicRoomController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\PageController;
 
@@ -17,10 +17,15 @@ Route::get('/local-guide', [PageController::class, 'localGuide'])->name('page.lo
 Route::get('/contact', [PageController::class, 'contact'])->name('page.contact');
 
 Route::get('/booking/search', [BookingController::class, 'search'])->name('booking.search');
-Route::get('/booking/create', [BookingController::class, 'create'])->name('booking.create');
 Route::post('/booking/store', [BookingController::class, 'store'])->name('booking.store');
-Route::get('/booking/success/{booking}', [BookingController::class, 'success'])->name('booking.success');
+Route::get('/booking/success', [BookingController::class, 'success'])->name('booking.success');
 
+Route::post('/booking/cart/add', [BookingController::class, 'addToCart'])->name('booking.cart.add');
+Route::get('/booking/cart/remove/{rowId}', [BookingController::class, 'removeFromCart'])->name('booking.cart.remove');
+Route::get('/booking/cart/clear', [BookingController::class, 'clearCart'])->name('booking.cart.clear');
+Route::get('/booking/cart', [BookingController::class, 'viewCart'])->name('booking.cart.view'); // The checkout page
+
+Route::get('/rooms/{roomType:slug}', [PublicRoomController::class, 'show'])->name('rooms.show');
 
 Route::get('/dashboard', function () {
     return view('dashboard');
@@ -40,7 +45,7 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     // Room Type CRUD
-    Route::resource('room-types', \App\Http\Controllers\Admin\RoomTypeController::class); // <-- ADD THIS LINE
+    Route::resource('room-types', \App\Http\Controllers\Admin\RoomTypeController::class)->scoped(['room_type' => 'id',]);
 
     // Amenity CRUD
     Route::resource('amenities', \App\Http\Controllers\Admin\AmenityController::class); // <-- ADD THIS LINE

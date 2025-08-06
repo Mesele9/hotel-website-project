@@ -8,6 +8,7 @@ use App\Models\Room;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str; 
+use App\Rules\EnsureRoomIsAvailable;
 
 
 class BookingController extends Controller
@@ -67,7 +68,7 @@ class BookingController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'room_id' => 'required|exists:rooms,id',
+            'room_id' => ['required', 'exists:rooms,id', new EnsureRoomIsAvailable()],
             'check_in_date' => 'required|date|after_or_equal:today',
             'check_out_date' => 'required|date|after:check_in_date',
             'guest_name' => 'required|string|max:255',
@@ -76,17 +77,6 @@ class BookingController extends Controller
             'total_guests' => 'required|integer|min:1',
             'notes' => 'nullable|string',
         ]);
-        
-        // Final check for availability
-        $isAvailable = !Booking::where('room_id', $validated['room_id'])
-            ->where(function ($q) use ($validated) {
-                $q->where('check_in_date', '<', $validated['check_out_date'])
-                  ->where('check_out_date', '>', $validated['check_in_date']);
-            })->exists();
-
-        if (!$isAvailable) {
-            return back()->withErrors(['room_id' => 'This room is not available for the selected dates.'])->withInput();
-        }
 
         // Calculate price
         $room = Room::with('roomType')->find($validated['room_id']);

@@ -53,7 +53,7 @@
                         <p class="text-gray-700 mb-4">{{ Str::limit($roomType->description, 100) }}</p>
                         <div class="flex justify-between items-center">
                             <span class="text-xl font-bold text-primary">${{ number_format($roomType->base_price, 2) }} <span class="text-sm font-normal text-gray-500">/ night</span></span>
-                            <a href="#" class="text-primary font-semibold hover:underline">View Details</a>
+                            <a href="{{ route('rooms.show', $roomType->slug) }}" class="text-primary font-semibold hover:underline">View Details</a>
                         </div>
                     </div>
                 </div>
