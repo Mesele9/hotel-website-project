@@ -8,7 +8,20 @@
         <!-- Guest Details Form -->
         <div class="md:col-span-2 bg-white p-8 rounded-lg shadow-lg">
             <h2 class="text-2xl font-bold mb-6">Guest Information</h2>
-            <form action="{{ route('booking.store') }}" method="POST">
+            @if ($errors->any())
+                <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert">
+                    <p class="font-bold">Please correct the errors below:</p>
+                    <ul>
+                        @foreach ($errors->all() as $error)
+                            <li class="list-disc ml-4">{{ is_array($error) ? implode(', ', $error) : $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+            {{-- **END: ADD THIS ERROR DISPLAY BLOCK** --}}
+
+                <form action="{{ route('booking.initialize') }}" method="POST">
+
                 @csrf
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -30,9 +43,11 @@
                     <textarea name="notes" id="notes" rows="4" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700"></textarea>
                 </div>
 
-                <h3 class="text-xl font-bold mb-4 mt-6">Payment Details</h3>
-                <p class="text-gray-600 mb-4">This is a demo. No real payment will be processed.</p>
-                <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg text-lg">Confirm Booking & Pay</button>
+                    <h3 class="text-xl font-bold mb-4 mt-6">Payment Details</h3>
+                    <p class="text-gray-600 mb-4">You will be redirected to our secure payment partner to complete your transaction.</p>
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg text-lg">
+                        Proceed to Payment
+                    </button>
             </form>
         </div>
 

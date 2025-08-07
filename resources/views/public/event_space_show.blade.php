@@ -55,7 +55,7 @@
                 </div>
             @endif
 
-            <form action="#" method="POST" class="bg-white p-8 rounded-lg shadow-lg">
+            <form action="{{ route('event_space.inquiry.store') }}" method="POST" class="bg-white p-8 rounded-lg shadow-lg">
                 @csrf
                 <input type="hidden" name="space_name" value="{{ $eventSpace->name }}">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -108,7 +108,6 @@
 </div>
 
 @push('scripts')
-{{-- **ADD THIS SCRIPT FOR THE GALLERY** --}}
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const mainImage = document.getElementById('main-event-image');

@@ -9,16 +9,36 @@ use App\Http\Controllers\HomeController;
 use App\Http\Controllers\PageController;
 
 use App\Models\EventSpace; 
+use Illuminate\Support\Facades\Http;
+
 
 // **REPLACE THE DEFAULT WELCOME ROUTE WITH THIS**
 Route::get('/', [HomeController::class, 'index'])->name('home');
 
+Route::get('/test-chapa-connection', function () {
+    try {
+        $response = Http::withHeaders([
+            'Authorization' => 'Bearer ' . env('CHAPA_SECRET_KEY')
+        ])->get('https://api.chapa.co/v1/banks');
+
+        if ($response->successful()) {
+            return 'SUCCESS: Connected to Chapa API and fetched banks.';
+        } else {
+            return 'FAILED: Could not connect. Response: ' . $response->body();
+        }
+    } catch (\Exception $e) {
+        return 'ERROR: Exception occurred. Message: ' . $e->getMessage();
+    }
+});
+
 // **ADD THE NEW PUBLIC ROUTES**
 Route::get('/meetings-events', [PageController::class, 'meetings'])->name('page.meetings');
 Route::get('/meetings-events/{eventSpace:slug}', [PageController::class, 'showEventSpace'])->name('event_space.show');
+Route::post('/meetings-events/inquiry', [PageController::class, 'storeEventInquiry'])->name('event_space.inquiry.store');
 Route::get('/local-guide', [PageController::class, 'localGuide'])->name('page.local_guide');
 Route::get('/local-guide/{post:slug}', [PageController::class, 'showPost'])->name('post.show');
 Route::get('/contact', [PageController::class, 'contact'])->name('page.contact');
+Route::post('/contact', [PageController::class, 'storeContactForm'])->name('page.contact.store'); 
 
 Route::get('/booking/search', [BookingController::class, 'search'])->name('booking.search');
 Route::post('/booking/store', [BookingController::class, 'store'])->name('booking.store');
@@ -27,9 +47,14 @@ Route::get('/booking/success', [BookingController::class, 'success'])->name('boo
 Route::post('/booking/cart/add', [BookingController::class, 'addToCart'])->name('booking.cart.add');
 Route::get('/booking/cart/remove/{rowId}', [BookingController::class, 'removeFromCart'])->name('booking.cart.remove');
 Route::get('/booking/cart/clear', [BookingController::class, 'clearCart'])->name('booking.cart.clear');
-Route::get('/booking/cart', [BookingController::class, 'viewCart'])->name('booking.cart.view'); // The checkout page
+Route::get('/booking/cart', [BookingController::class, 'viewCart'])->name('booking.cart.view'); 
 
 Route::get('/rooms/{roomType:slug}', [PublicRoomController::class, 'show'])->name('rooms.show');
+
+// **ADD THE NEW CHAPA BOOKING ROUTES**
+Route::post('/booking/initialize', [BookingController::class, 'initializeChapa'])->name('booking.initialize');
+Route::get('/booking/chapa/callback', [BookingController::class, 'chapaCallback'])->name('booking.callback');
+Route::get('/booking/confirmation', [BookingController::class, 'confirmation'])->name('booking.confirmation');
 
 Route::get('/dashboard', function () {
     return view('dashboard');
@@ -73,6 +98,9 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
 
     // Meetings & Events Management
     Route::resource('event-spaces', \App\Http\Controllers\Admin\EventSpaceController::class)->except(['show']);
+
+    // Contact Message Viewer
+    Route::resource('messages', \App\Http\Controllers\Admin\ContactMessageController::class)->only(['index', 'show']);
 
     // Add other admin routes here in the future
 
