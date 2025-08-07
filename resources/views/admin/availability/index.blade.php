@@ -137,6 +137,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
         eventClick: function(info) {
             // 1) Unblock background "Blocked" events
+                        // 2) Show booking details for real bookings
+            if (info.event.extendedProps.booking_id) {
+                bookingModalGuest.textContent = info.event.extendedProps.guest_name;
+                bookingModalRef.textContent   = info.event.extendedProps.reference;
+
+                let url = "{{ route('admin.bookings.show', ['booking' => ':id']) }}";
+                url = url.replace(':id', info.event.extendedProps.booking_id);
+                bookingModalLink.setAttribute('href', url);
+
+                bookingModal.classList.remove('hidden');
+            }
+            
             if (info.event.title === 'Blocked') {
                 if (confirm('Are you sure you want to make this period available again?')) {
                     const data = {
@@ -150,17 +162,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            // 2) Show booking details for real bookings
-            if (info.event.extendedProps.booking_id) {
-                bookingModalGuest.textContent = info.event.extendedProps.guest_name;
-                bookingModalRef.textContent   = info.event.extendedProps.reference;
-
-                let url = "{{ route('admin.bookings.show', ['booking' => ':id']) }}";
-                url = url.replace(':id', info.event.extendedProps.booking_id);
-                bookingModalLink.setAttribute('href', url);
-
-                bookingModal.classList.remove('hidden');
-            }
         },
 
         select: function(selectionInfo) {

@@ -8,12 +8,16 @@ use App\Http\Controllers\PublicRoomController;
 use App\Http\Controllers\HomeController;
 use App\Http\Controllers\PageController;
 
+use App\Models\EventSpace; 
+
 // **REPLACE THE DEFAULT WELCOME ROUTE WITH THIS**
 Route::get('/', [HomeController::class, 'index'])->name('home');
 
 // **ADD THE NEW PUBLIC ROUTES**
 Route::get('/meetings-events', [PageController::class, 'meetings'])->name('page.meetings');
+Route::get('/meetings-events/{eventSpace:slug}', [PageController::class, 'showEventSpace'])->name('event_space.show');
 Route::get('/local-guide', [PageController::class, 'localGuide'])->name('page.local_guide');
+Route::get('/local-guide/{post:slug}', [PageController::class, 'showPost'])->name('post.show');
 Route::get('/contact', [PageController::class, 'contact'])->name('page.contact');
 
 Route::get('/booking/search', [BookingController::class, 'search'])->name('booking.search');
@@ -62,6 +66,13 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     Route::post('availability', [\App\Http\Controllers\Admin\AvailabilityController::class, 'store'])->name('availability.store');
 
     Route::resource('bookings', \App\Http\Controllers\Admin\BookingController::class); // Only create index/show for now
+
+    // Local Guide / Blog Management
+    Route::resource('categories', \App\Http\Controllers\Admin\CategoryController::class)->except(['show']);
+    Route::resource('posts', \App\Http\Controllers\Admin\PostController::class);
+
+    // Meetings & Events Management
+    Route::resource('event-spaces', \App\Http\Controllers\Admin\EventSpaceController::class)->except(['show']);
 
     // Add other admin routes here in the future
 

@@ -13,6 +13,7 @@
 
     <!-- Scripts -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
     <!-- FullCalendar -->
     <script src='https://cdn.jsdelivr.net/npm/fullcalendar-scheduler@6.1.14/index.global.min.js'></script> 
@@ -41,7 +42,19 @@
                  <div class="mt-4">
                     <p class="px-4 pt-2 pb-1 text-xs text-gray-500 uppercase">Manage Website</p>
                     <a href="{{ route('admin.settings.index') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">Site Customization</a>
-                    <a href="#" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">Local Guide</a>
+                    <a href="{{ route('admin.event-spaces.index') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">Meetings & Events</a>
+
+                    <div x-data="{ open: false }">
+                        <button @click="open = !open" class="w-full flex justify-between items-center px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">
+                            <span>Local Guide</span>
+                            <svg class="h-4 w-4" :class="{'rotate-180': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </button>
+                        <div x-show="open" class="pl-4">
+                            <a href="{{ route('admin.posts.index') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">Posts</a>
+                            <a href="{{ route('admin.categories.index') }}" class="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 hover:text-white">Categories</a>
+                        </div>
+                    </div>
+
                 </div>
             </nav>
         </aside>

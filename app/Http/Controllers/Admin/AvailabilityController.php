@@ -55,30 +55,42 @@ class AvailabilityController extends Controller
         $bookings = Booking::with('room')->get();
         foreach ($bookings as $booking) {
             $events[] = [
-                'id'        => 'booking_' . $booking->id, // Add a unique ID for the event
-                'title'     => 'Booked: ' . $booking->guest_name,
-                'start'     => $booking->check_in_date,
-                'end'       => Carbon::parse($booking->check_out_date)->addDay()->toDateString(),
-                'resourceId'=> $booking->room_id,
-                'display'   => 'background',
-                'color'     => '#f87171', // Red-400 for bookings
-                'classNames'=> ['booking-event'], // Add a CSS class to target these events
-                'extendedProps' => [ // Add custom data here
+                'id'             => 'booking_' . $booking->id,
+                'title'          => 'Booked: ' . $booking->guest_name,
+                'start'          => $booking->check_in_date,
+                'end'            => Carbon::parse($booking->check_out_date)->addDay()->toDateString(),
+                'resourceId'     => $booking->room_id,
+                'display'        => 'background', // **Bookings are always in the background**
+                'color'          => '#f15959ff', // A lighter red for the background
+                'classNames'     => ['booking-event'],
+                'extendedProps'  => [
                     'booking_id' => $booking->id,
                     'guest_name' => $booking->guest_name,
-                    'reference' => $booking->booking_reference,
+                    'reference'  => $booking->booking_reference,
                 ]
             ];
-
         }
-
+    
         $dateBlocks = DateBlock::all();
         foreach ($dateBlocks as $block) {
-            $events[] = [ 'title' => 'Blocked', 'start' => $block->start_date, 'end' => Carbon::parse($block->end_date)->addDay()->toDateString(), 'resourceId' => $block->room_id, 'color' => '#fbbf24', 'editable' => false ];
+            $events[] = [
+                'id'             => 'block_' . $block->id,
+                'title'          => 'Blocked',
+                'start'          => $block->start_date,
+                'end'            => Carbon::parse($block->end_date)->addDay()->toDateString(),
+                'resourceId'     => $block->room_id,
+                'display'        => 'auto', // **Let blocks be solid, foreground events**
+                'color'          => '#fbbf24', // Amber-400
+                'classNames'     => ['blocked-event'],
+                'extendedProps'  => [
+                    'block_id'   => $block->id
+                ]
+            ];
         }
-
+    
         return view('admin.availability.index', [ 'resources' => json_encode($resources), 'events' => json_encode($events) ]);
     }
+
 
     public function store(Request $request)
     {
