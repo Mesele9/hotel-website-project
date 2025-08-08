@@ -254,31 +254,54 @@ class BookingController extends Controller
      */
     public function chapaCallback(Request $request)
     {
-        $tx_ref = $request->query('tx_ref');
-
-        // 1. Verify the transaction with Chapa's server
-        $verification = Chapa::verifyPayment($tx_ref);
-
-        if ($verification['status'] !== 'success') {
-            // Handle failed or pending verification
-            Log::warning('Chapa Payment Verification Failed or Pending: ', $verification);
-            return redirect()->route('booking.cart.view')->withErrors(['error' => 'Payment verification failed. Please contact us if you have been charged.']);
+        $tx_ref = $request->query('tx_ref', $request->query('trx_ref'));
+        // **THE FIX: Check if tx_ref is present in the query parameters**
+        if (!$tx_ref) {
+            // Find session keys that match our transaction reference pattern
+            $sessionKeys = array_keys(session()->all());
+            $transactionKeys = preg_grep('/^YEG-TX-/', $sessionKeys);
+            if (!empty($transactionKeys)) {
+                // Assume the most recent one is the one we're looking for
+                $tx_ref = last($transactionKeys);
+                Log::warning('Chapa tx_ref missing from callback. Using last known session reference as a fallback for testing: ' . $tx_ref);
+            }
         }
 
-        // 2. Retrieve the booking data from the session
+        if (!$tx_ref) {
+            Log::error('Chapa callback received without a tx_ref and no fallback was found.');
+            return redirect()->route('booking.cart.view')->withErrors(['error' => 'Invalid payment callback. Transaction reference could not be determined.']);
+        }
+                
+            // **THE FIX: Perform a manual server-to-server verification**
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . env('CHAPA_SECRET_KEY')
+            ])->get("https://api.chapa.co/v1/transaction/verify/" . $tx_ref);
+
+            $verification = $response->json();
+
+            if (!$response->successful() || !isset($verification['status']) || $verification['status'] !== 'success') {
+                Log::warning('Chapa Payment Verification Failed: ', $verification);
+                return redirect()->route('booking.cart.view')->withErrors(['error' => 'Payment verification failed. Please contact us if you have been charged.']);
+            }
+        } catch (\Exception $e) {
+            Log::error('Chapa Verification Connection Exception: ' . $e->getMessage());
+            return redirect()->route('booking.cart.view')->withErrors(['error' => 'A connection error occurred while verifying your payment. Please contact us.']);
+        }
+
+        // --- Verification Successful, Proceed to Create Booking ---
+
         $bookingData = session()->get($tx_ref);
         if (!$bookingData) {
             Log::error('No pending booking data found in session for tx_ref: ' . $tx_ref);
-            // This might happen if the user has already completed this booking and refreshes the page
             return redirect()->route('home')->withErrors(['error' => 'Your session has expired or the booking is already processed.']);
         }
 
-        // 3. Create the booking(s) in the database
         $bookings = DB::transaction(function () use ($bookingData) {
-            // ... (The logic to create bookings from $bookingData is identical to the Stripe version) ...
             $createdBookings = [];
+            $guestEmail = $bookingData['guest_details']['guest_email'];
+
             foreach ($bookingData['cart'] as $item) {
-                // Final availability check for each room
                 $isAvailable = !Booking::where('room_id', $item['room_id'])->where(function ($q) use ($item) {
                     $q->where('check_in_date', '<', $item['check_out_date'])->where('check_out_date', '>', $item['check_in_date']);
                 })->exists();
@@ -299,11 +322,10 @@ class BookingController extends Controller
                 $booking->save();
                 $createdBookings[] = $booking;
             }
-            Mail::to($bookingData['guest_details']['guest_email'])->send(new BookingConfirmationMail($createdBookings[0]));
+            Mail::to($guestEmail)->send(new BookingConfirmationMail($createdBookings[0]));
             return $createdBookings;
         });
 
-        // 4. Clear all used session data
         session()->forget('booking_cart');
         session()->forget($tx_ref);
 
